@@ -1,0 +1,64 @@
+# GitHub Trending 抓取配置
+
+# 抓取目标语言列表（留空则抓取全部语言）
+languages:
+  - ""          # 全部语言
+  - python
+  - javascript
+  - typescript
+  - rust
+  - go
+  - java
+  - cpp
+
+# 时间范围：daily / weekly / monthly
+since: daily
+
+# 抓取频率（分钟）
+scrape_interval_minutes: 60
+
+# 每日汇总推送时间（24小时制）
+daily_report_hour: 8
+daily_report_minute: 0
+
+# 企业微信机器人 Webhook URL（替换为你的实际 URL）
+wechat_webhook: ""
+
+# GitHub Token（可选，用于 API 调用避免限流）
+github_token: ""
+
+# 爆款评分权重
+scoring:
+  today_stars_weight: 0.4       # 今日新增 stars 权重
+  consecutive_days_weight: 0.2  # 连续在榜天数权重
+  acceleration_weight: 0.3      # star 增长加速度权重
+  repo_age_weight: 0.1          # 仓库年龄权重（越新分越高）
+
+# 预警阈值
+alerts:
+  # star 增速加速度超过此值时触发通知（百分比）
+  acceleration_threshold: 100
+  # 今日新增 stars 超过此值时触发通知
+  today_stars_threshold: 200
+
+# 动量因子配置
+momentum:
+  # 均线窗口（快照数，每小时1次 → 6 = 近 6 小时均线）
+  ma_window: 6
+  # 回看数据范围（小时）
+  lookback_hours: 48
+  # 四因子权重（新鲜度最高 → 抢信息差做视频）
+  w_momentum: 0.20    # 价格动量：star 总量偏离均线
+  w_delta: 0.20       # 增速动量：每小时新增的加速度
+  w_volume: 0.20      # 量能突破：today_stars 突然飙升
+  w_freshness: 0.40   # 新鲜度：刚上榜的项目优先推
+  # 输出 TOP N
+  top_n: 10
+  # 是否只看 AI 相关项目
+  ai_only: true
+
+# 日志级别：DEBUG / INFO / WARNING / ERROR
+log_level: INFO
+
+# 数据库路径
+database_path: data/github_trending.db
