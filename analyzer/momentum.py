@@ -8,6 +8,7 @@
 """
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -17,20 +18,34 @@ from storage.database import Database
 
 logger = logging.getLogger(__name__)
 
-# AI 相关关键词（仓库名、描述、topics 中命中任一即算 AI 项目）
-AI_KEYWORDS = [
-    "ai", "llm", "gpt", "agent", "chat", "copilot",
+# AI 相关关键词
+# 长词/复合词：子串匹配即可（足够精准）
+AI_SUBSTR_KEYWORDS = [
+    "llm", "gpt", "copilot",
     "transformer", "diffusion", "stable-diffusion", "midjourney",
-    "langchain", "llamaindex", "rag", "embedding",
+    "langchain", "llamaindex", "embedding",
     "openai", "anthropic", "claude", "gemini", "ollama", "llama",
-    "machine-learning", "deep-learning", "neural", "ml", "dl",
-    "nlp", "cv", "computer-vision", "speech", "tts", "stt",
-    "model", "inference", "fine-tune", "finetune", "lora",
-    "prompt", "reasoning", "multimodal", "vision",
-    "mcp", "a]i-agent", "agentic", "workflow",
-    "stable", "comfyui", "automatic1111",
-    "huggingface", "vllm", "mlx", "moe",
+    "machine-learning", "deep-learning", "neural",
+    "computer-vision",
+    "inference", "fine-tune", "finetune", "lora",
+    "multimodal", "agentic",
+    "comfyui", "automatic1111",
+    "huggingface", "vllm", "mlx",
+    "chatbot", "chatgpt",
 ]
+
+# 短词/易误匹配词：必须整词匹配（用 \b 词边界）
+AI_WORD_KEYWORDS = [
+    "ai", "ml", "dl", "nlp", "cv", "rag", "mcp", "moe",
+    "tts", "stt", "agent", "agents",
+    "model", "models", "prompt", "reasoning", "vision",
+]
+
+# 预编译正则：\bkeyword\b 整词匹配
+_WORD_PATTERN = re.compile(
+    r"\b(" + "|".join(re.escape(k) for k in AI_WORD_KEYWORDS) + r")\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -298,28 +313,43 @@ class MomentumAnalyzer:
         else:
             base_score = 0.1
 
-        # ---- 加成：仓库创建时间 ----
+        # ---- 仓库年龄：乘数修正 ----
+        # 新项目突然爆火 → 做视频最有话题性
+        # 老项目上榜 → 没什么新鲜感，打折
         created_at = meta.get("created_at")
         age_days = -1
-        bonus = 0.0
+        age_multiplier = 0.7  # 未知年龄，给个中间值
         if created_at:
             try:
                 created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
                 age_days = max((now - created_dt).days, 0)
                 if age_days <= 30:
-                    bonus = 0.15  # 一个月内创建的新仓库，额外加成
+                    age_multiplier = 1.3   # 一个月内的新仓库，加成 30%
                 elif age_days <= 90:
-                    bonus = 0.08
+                    age_multiplier = 1.1   # 三个月内，小幅加成
+                elif age_days <= 180:
+                    age_multiplier = 0.8   # 半年，轻微打折
+                elif age_days <= 365:
+                    age_multiplier = 0.5   # 一年，打五折
+                else:
+                    age_multiplier = 0.25  # 超过一年的老项目，打到 1/4
             except (ValueError, TypeError):
                 pass
 
-        return min(base_score + bonus, 1.0), first_seen_hours, age_days
+        return min(base_score * age_multiplier, 1.0), first_seen_hours, age_days
 
     @staticmethod
     def _is_ai_related(row) -> bool:
-        """判断项目是否 AI 相关"""
-        text = f"{row.get('repo_full_name', '')} {row.get('description', '')}".lower()
-        return any(kw in text for kw in AI_KEYWORDS)
+        """判断项目是否 AI 相关（精准匹配）"""
+        text = f"{row.get('repo_full_name', '')} {row.get('description', '')}"
+        text_lower = text.lower()
+        # 长词子串匹配
+        if any(kw in text_lower for kw in AI_SUBSTR_KEYWORDS):
+            return True
+        # 短词整词匹配（避免 "handle" 匹配 "dl"、"maintain" 匹配 "ai"）
+        if _WORD_PATTERN.search(text):
+            return True
+        return False
 
 
 def format_momentum_report(results: list[MomentumResult]) -> str:
