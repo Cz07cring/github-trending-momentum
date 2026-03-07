@@ -272,6 +272,35 @@ class Database:
         finally:
             conn.close()
 
+    def get_latest_round_snapshot(self, window_minutes: int = 5) -> list[dict]:
+        """获取最近一轮抓取的所有仓库（跨语言合并去重，保留 today_stars 最大的那条）"""
+        conn = self._get_conn()
+        try:
+            latest = conn.execute(
+                "SELECT MAX(scraped_at) as latest FROM snapshots"
+            ).fetchone()
+            if not latest or not latest["latest"]:
+                return []
+
+            rows = conn.execute(
+                """SELECT *
+                   FROM snapshots
+                   WHERE scraped_at >= datetime(?, ?)
+                   ORDER BY today_stars DESC""",
+                (latest["latest"], f"-{window_minutes} minutes"),
+            ).fetchall()
+
+            # 按 repo_full_name 去重，保留 today_stars 最大的
+            seen: dict[str, dict] = {}
+            for row in rows:
+                r = dict(row)
+                name = r["repo_full_name"]
+                if name not in seen or r["today_stars"] > seen[name]["today_stars"]:
+                    seen[name] = r
+            return list(seen.values())
+        finally:
+            conn.close()
+
     def get_repos_without_meta(self) -> list[str]:
         """获取还没有拉过元数据的仓库名列表"""
         conn = self._get_conn()

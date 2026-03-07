@@ -10,6 +10,7 @@ import yaml
 
 from analyzer.momentum import MomentumAnalyzer, format_momentum_report
 from analyzer.trend import TrendAnalyzer
+from notifier.html_report import save_report
 from notifier.wechat import WeChatNotifier
 from scraper.repo_detail import get_repo_detail
 from scraper.trending import fetch_trending
@@ -242,13 +243,27 @@ def main():
     parser.add_argument("--now", action="store_true", help="立即执行一次抓取并输出结果")
     parser.add_argument("--momentum", action="store_true", help="仅运行动量因子分析（不抓取）")
     parser.add_argument("--all", action="store_true", help="动量分析时包含所有项目（不限 AI）")
+    parser.add_argument("--html", action="store_true", help="生成 HTML 报告并在浏览器打开")
     parser.add_argument("--config", default="config.yaml", help="配置文件路径")
     args = parser.parse_args()
 
     config = load_config(args.config)
     setup_logging(config.get("log_level", "INFO"))
 
-    if args.momentum:
+    if args.html:
+        db = Database(config.get("database_path", "data/github_trending.db"))
+        ai_only = not args.all
+        if args.all:
+            config.setdefault("momentum", {})["ai_only"] = False
+        momentum_results = run_momentum(config, db)
+        raw_snapshots = db.get_latest_round_snapshot()
+        trend_results = sorted(raw_snapshots, key=lambda x: x.get("today_stars", 0), reverse=True)[:20]
+        out_path = config.get("html_report_path", "data/report.html")
+        save_report(out_path, momentum_results, trend_results, ai_only=ai_only)
+        print(f"HTML 报告已生成: {out_path}")
+        import webbrowser, os
+        webbrowser.open(f"file://{os.path.abspath(out_path)}")
+    elif args.momentum:
         db = Database(config.get("database_path", "data/github_trending.db"))
         if args.all:
             config.setdefault("momentum", {})["ai_only"] = False
